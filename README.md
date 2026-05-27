@@ -170,3 +170,13 @@ O histórico de cada sessão é gravado em **SQLite** (`agent_sessions.db`) pelo
 ## ⚠️ Aviso ético
 
 Ferramentas de uso defensivo / investigação autorizada. Use apenas em alvos próprios ou com permissão explícita.
+
+---
+
+## 📸 Prints de execução
+
+CLI enumerando subdomínios de `fiap.com.br` (modelo Gemini + framework Agno):
+
+![CLI — agente recebendo o comando de enumeração de subdomínios](GS02%20Prints/Captura%20de%20tela%202026-05-27%20110550.png)
+
+![CLI — agente acionando a tool search_subdomains_crt](GS02%20Prints/Captura%20de%20tela%202026-05-27%20110653.png)
