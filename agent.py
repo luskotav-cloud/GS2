@@ -47,17 +47,23 @@ def _build_model():
         return Gemini(id=GEMINI_MODEL, api_key=GEMINI_API_KEY, thinking_budget=0)
 
     # Ollama local. keep_alive mantém o modelo na RAM entre requisições.
-    return Ollama(id=OLLAMA_MODEL, host=OLLAMA_HOST, keep_alive="15m")
+    # temperature baixa = respostas mais determinísticas e diretas (menos "enrolação").
+    return Ollama(
+        id=OLLAMA_MODEL,
+        host=OLLAMA_HOST,
+        keep_alive="15m",
+        options={"temperature": 0.2},
+    )
 
 INSTRUCTIONS = [
-    "Você é um assistente especializado em OSINT (Open Source Intelligence) e forense digital.",
-    "Seu objetivo é ajudar analistas de segurança em reconhecimento e investigação de domínios, usuários e arquivos.",
-    "Use SEMPRE as tools disponíveis para obter dados reais — nunca invente resultados.",
-    "Quando o usuário pedir uma investigação, escolha a tool apropriada e execute-a.",
-    "Após executar a tool, resuma o resultado de forma clara e objetiva em português.",
-    "Se um domínio/arquivo/username não for informado, pergunte qual é o alvo.",
-    "Lembre o contexto da conversa: o usuário pode se referir a alvos mencionados antes.",
-    "Aja de forma ética: estas ferramentas são para análise defensiva e investigação autorizada.",
+    "Você é um agente de OSINT e forense digital. Seja DIRETO e objetivo.",
+    "Fluxo: interprete o pedido, escolha a tool certa, extraia o alvo (domínio/username/IP/URL/arquivo) e CHAME a tool imediatamente.",
+    "NÃO escreva preâmbulos, nem explique o que vai fazer, nem descreva a tool antes de usá-la. Apenas chame.",
+    "NÃO raciocine em voz alta nem mostre seu pensamento. Vá direto à ação.",
+    "Depois que a tool retornar, apenas devolva o resultado dela com no máximo UMA frase curta de contexto. Nada de textos longos.",
+    "Use SEMPRE as tools para dados reais — nunca invente nem simule resultados.",
+    "Só pergunte o alvo se ele realmente não foi informado e não puder ser inferido do histórico da conversa.",
+    "Uso ético: análise defensiva e investigação autorizada.",
 ]
 
 
