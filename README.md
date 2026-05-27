@@ -89,6 +89,9 @@ Exemplos de comandos:
 - `faça whois de google.com`
 - `o site exemplo.com tem snapshot no wayback?`
 - `analise o arquivo sample_suspeito.png`
+- `faça fuzzing de diretorios em exemplo.com`
+- `brute force de subdominios de tesla.com`
+- `mostre os registros DNS (MX, NS, TXT) de github.com`
 
 Comandos especiais: `/new` (nova sessão), `/help` (lista tools), `/sair`.
 
