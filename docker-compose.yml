@@ -1,0 +1,19 @@
+# docker-compose.yml — sobe a interface web do agente.
+# Uso:
+#   docker compose up --build
+#   -> http://localhost:5000
+#
+# Lê as variáveis (incluindo GEMINI_API_KEY) do arquivo .env automaticamente.
+
+services:
+  osint-agent:
+    build: .
+    container_name: osint-agent
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: 5000
+    restart: unless-stopped

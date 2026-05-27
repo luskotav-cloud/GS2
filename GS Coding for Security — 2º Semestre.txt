@@ -1,0 +1,212 @@
+GS Coding for Security — 2º Semestre
+Desenvolvimento de Agente de IA com Python e Agno
+Objetivo
+Desenvolver uma aplicação em Python utilizando o framework Agno para criação de um Agente de IA funcional com uso de tools (ferramentas).
+
+O tema do agente é livre dentro do universo da tecnologia.
+
+A avaliação tem como objetivo verificar:
+
+integração de modelos de IA;
+
+criação de tools personalizadas;
+
+organização de projeto;
+
+uso de variáveis de ambiente;
+
+execução via CLI;
+
+noções básicas de deploy/containerização;
+
+criação de interface web simples.
+
+Requisitos Obrigatórios — Valor: 8,0 pontos
+A entrega base da prova deverá conter obrigatoriamente:
+
+1. Agente utilizando Agno
+O projeto deve utilizar o framework Agno para criação do agente de IA.
+
+O agente deve:
+
+receber perguntas/comandos do usuário;
+
+utilizar tools durante a execução;
+
+guardar sessão entre as perguntas;
+
+responder de forma funcional e coerente.
+
+2. Utilização mínima de 3 tools próprias
+O agente deverá possuir no mínimo 3 tools implementadas pelo aluno.
+
+As tools:
+
+devem executar ações reais;
+
+devem possuir descrição/docstring adequada;
+
+devem estar integradas corretamente ao agente.
+
+Exemplos
+consulta de APIs;
+
+leitura de arquivos;
+
+consultas SQLite;
+
+operações de rede;
+
+automações;
+
+análise de logs;
+
+manipulação de dados;
+
+scanners;
+
+ferramentas de sistema;
+
+cálculos;
+
+etc.
+
+Observação
+Não serão aceitas tools apenas simuladas ou que retornem respostas fixas sem processamento real.
+
+3. Execução via CLI (obrigatório)
+A versão principal da aplicação deverá funcionar em terminal/CLI.
+
+Exemplo esperado
+python main.py
+ou
+
+python app.py
+O usuário deve conseguir conversar/interagir com o agente pelo terminal.
+
+4. Uso de arquivo .env e requirements.txt
+As configurações do projeto devem estar separadas em um arquivo .env.
+
+Exemplos
+chave da API Gemini;
+
+modelo utilizado;
+
+URL do Ollama;
+
+parâmetros do agente;
+
+configurações gerais.
+
+O objetivo é permitir reutilização do projeto por outros usuários sem necessidade de alterar código-fonte.
+
+5. Modelo de IA permitido
+Será permitido utilizar:
+
+Ollama local;
+
+Gemini API.
+
+O modelo utilizado é livre.
+
+Observação
+Devido a diversidade de hardware utilize o modelo que for melhor pra você
+
+6. Persistência
+O projeto poderá utilizar:
+
+SQLite padrão do Agno;
+
+memória simples;
+
+armazenamento básico local.
+
+Não é necessário utilizar bancos de dados externos.
+
+7. Estrutura mínima da entrega
+O projeto deverá conter no mínimo:
+
+README.md 
+requirements.txt 
+.env.example 
+main.py ou app.py 
+tools.py 
+(ou estrutura equivalente)
+Critérios de Avaliação — 8,0 pontos
+Criação correta do agente com Agno	1,5
+Implementação de no mínimo 4 tools funcionais	2,5
+Integração correta entre agente e tools	1,0
+Qualidade e utilidade prática das tools	1,0
+Uso adequado de .env e organização do projeto	0,5
+Execução funcional via CLI	1,0
+README com instruções de execução e descrição do agente e suas tools	0,5
+Pontuação Extra — até +2,0 pontos
+1. Containerização com Docker — +1,0 ponto
+O aluno poderá obter pontuação extra realizando a containerização da aplicação.
+
+Requisitos
+Dockerfile funcional;
+
+instruções de build e execução no README.
+
+Exemplo
+docker build -t meu-agente . docker run meu-agente
+2. Interface Web Simples — +1,0 ponto
+O aluno poderá obter pontuação extra criando uma interface web simples para interação com o agente.
+
+Requisitos mínimos
+utilização de Flask;
+
+formulário simples para envio de mensagens;
+
+exibição das respostas do agente;
+
+templates HTML básicos.
+
+Observação
+Não será avaliada qualidade visual/frontend avançado.
+
+O foco será:
+
+funcionamento;
+
+integração;
+
+organização.
+
+Forma de Entrega
+A entrega deverá ser realizada via Teams.
+
+Enviar
+arquivo .zip contendo o projeto OU link para o projeto no Github;
+
+todos os arquivos necessários para execução;
+
+prints em funcionamento na sua máquina;
+
+README com instruções e prints.
+
+Restrições
+copiar integralmente projetos prontos de terceiros;
+
+projetos idênticos aos do colega;
+
+utilizar tools criadas em sala de aula (classificação de IP, scanner de portas);
+
+utilizar tools falsas/simuladas apenas para cumprir quantidade mínima.
+
+Duração da prova
+Tempo máximo: até 4 horas;
+
+Início às 08h até 12:00h.
+
+Recomendações
+começar pela versão CLI;
+
+implementar as tools antes da interface;
+
+testar cada tool individualmente;
+
+manter o projeto simples e funcional;
+
+priorizar estabilidade em vez de complexidade excessiva

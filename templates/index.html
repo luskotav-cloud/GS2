@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ agent_name }} — OSINT Recon</title>
+  <!-- Vue 3 e marked (markdown) via CDN: sem etapa de build -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --panel: #171a23; --accent: #2dd4bf; --accent2: #38bdf8;
+      --text: #e6e9ef; --muted: #8b93a7; --user: #1f6feb; --border: #262b38;
+    }
+    body { font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; }
+    #app { display: grid; grid-template-columns: 280px 1fr; height: 100vh; }
+    aside { background: var(--panel); border-right: 1px solid var(--border); padding: 18px; overflow-y: auto; }
+    aside h1 { font-size: 18px; color: var(--accent); margin-bottom: 4px; }
+    aside .model { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+    aside h2 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; letter-spacing: .5px; }
+    .tool { background: #1d2130; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; transition: .15s; }
+    .tool:hover { border-color: var(--accent); }
+    .tool .name { font-family: monospace; font-size: 12px; color: var(--accent2); }
+    .tool .desc { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    button.reset { width: 100%; margin-top: 16px; padding: 9px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+    button.reset:hover { color: #fff; border-color: var(--accent); }
+    main { display: flex; flex-direction: column; height: 100vh; }
+    #messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    .msg { max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+    .msg.user { align-self: flex-end; background: var(--user); color: #fff; border-bottom-right-radius: 2px; }
+    .msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+    .msg.bot :is(p, ul, ol) { margin: 6px 0; }
+    .msg.bot code { background: #0b0d13; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+    .msg.bot pre { background: #0b0d13; padding: 10px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
+    .role { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .typing { color: var(--muted); font-style: italic; }
+    form { display: flex; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border); background: var(--panel); }
+    input[type=text] { flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; }
+    input[type=text]:focus { outline: none; border-color: var(--accent); }
+    button.send { padding: 0 22px; background: var(--accent); color: #04211d; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; }
+    button.send:disabled { opacity: .5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside>
+      <h1>[[ agentName ]]</h1>
+      <div class="model">modelo: [[ model ]]</div>
+      <h2>Tools ([[ tools.length ]])</h2>
+      <div class="tool" v-for="t in tools" :key="t.name" @click="useTool(t)">
+        <div class="name">[[ t.name ]]</div>
+        <div class="desc">[[ t.description ]]</div>
+      </div>
+      <button class="reset" @click="resetSession">Nova sessão</button>
+    </aside>
+
+    <main>
+      <div id="messages" ref="box">
+        <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
+          <div class="role">[[ m.role === 'user' ? 'Você' : agentName ]]</div>
+          <div v-if="m.role === 'bot'" v-html="render(m.text)"></div>
+          <div v-else>[[ m.text ]]</div>
+        </div>
+        <div v-if="loading" class="msg bot"><span class="typing">analisando…</span></div>
+      </div>
+
+      <form @submit.prevent="send">
+        <input type="text" v-model="input" placeholder="Ex: enumere subdominios de tesla.com" :disabled="loading" autofocus />
+        <button class="send" type="submit" :disabled="loading || !input.trim()">Enviar</button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    const { createApp } = Vue;
+    createApp({
+      delimiters: ['[[', ']]'],
+      data() {
+        return {
+          agentName: "{{ agent_name }}",
+          model: "{{ model }}",
+          input: "",
+          messages: [{ role: "bot", text: "Olá! Sou o agente de **OSINT e forense digital**. Peça uma investigação de domínio, username ou arquivo." }],
+          tools: [],
+          loading: false,
+          sessionId: "web-" + Math.random().toString(36).slice(2, 10),
+        };
+      },
+      mounted() { this.loadTools(); },
+      methods: {
+        render(text) { return marked.parse(text || ""); },
+        scroll() { this.$nextTick(() => { const b = this.$refs.box; b.scrollTop = b.scrollHeight; }); },
+        async loadTools() {
+          try { const r = await fetch("/api/tools"); const d = await r.json(); this.tools = d.tools; }
+          catch (e) { console.error(e); }
+        },
+        useTool(t) { this.input = t.name.replaceAll("_", " ") + " "; },
+        async send() {
+          const msg = this.input.trim();
+          if (!msg || this.loading) return;
+          this.messages.push({ role: "user", text: msg });
+          this.input = ""; this.loading = true; this.scroll();
+          try {
+            const r = await fetch("/api/chat", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ message: msg, session_id: this.sessionId }),
+            });
+            const d = await r.json();
+            this.messages.push({ role: "bot", text: d.error ? ("⚠️ " + d.error) : d.response });
+          } catch (e) {
+            this.messages.push({ role: "bot", text: "⚠️ Erro de conexão com o servidor." });
+          } finally { this.loading = false; this.scroll(); }
+        },
+        async resetSession() {
+          try { await fetch("/api/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: this.sessionId }) }); } catch (e) {}
+          this.sessionId = "web-" + Math.random().toString(36).slice(2, 10);
+          this.messages = [{ role: "bot", text: "Nova sessão iniciada. 🔄" }];
+        },
+      },
+    }).mount("#app");
+  </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+agno==2.6.9
+ollama
+openai
+google-genai
+sqlalchemy
+python-whois
+requests
+flask
+flask-cors
+python-dotenv
