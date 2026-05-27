@@ -14,7 +14,7 @@ da sessão entre as perguntas via SQLite. Comandos especiais:
 import sys
 import uuid
 
-from agent import build_agent, AGENT_NAME, MODEL_LABEL, MODEL_PROVIDER
+from agent import build_agent, run_with_retry, AGENT_NAME, MODEL_LABEL, MODEL_PROVIDER
 from tools import ALL_TOOLS
 
 BANNER = r"""
@@ -68,9 +68,14 @@ def main() -> None:
             print(f"[nova sessão: {session_id[:8]}]\n")
             continue
 
-        # Resposta em streaming (renderização estilo chat com markdown).
-        print()
-        agent.print_response(user_input, stream=True)
+        # Executa com retry automático em rate-limit/sobrecarga (429 por
+        # minuto / 503). Não faz streaming para poder re-tentar de forma limpa.
+        print("\nagente > ", end="", flush=True)
+        try:
+            result = run_with_retry(agent, user_input)
+            print(result.content)
+        except Exception as e:
+            print(f"[erro] Falha ao consultar o modelo: {e}")
         print()
 
 

@@ -22,7 +22,7 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-from agent import build_agent, AGENT_NAME, MODEL_LABEL
+from agent import build_agent, run_with_retry, AGENT_NAME, MODEL_LABEL
 from tools import ALL_TOOLS
 
 load_dotenv()
@@ -70,7 +70,7 @@ def api_chat():
 
     try:
         agent = get_agent(session_id)
-        result = agent.run(message)
+        result = run_with_retry(agent, message)
         return jsonify({"response": result.content, "session_id": session_id})
     except Exception as e:
         return jsonify({"error": f"Falha ao executar o agente: {e}"}), 500
@@ -96,7 +96,7 @@ def api_upload():
     )
     try:
         agent = get_agent(session_id)
-        result = agent.run(prompt)
+        result = run_with_retry(agent, prompt)
         return jsonify(
             {"response": result.content, "filename": filename, "session_id": session_id}
         )

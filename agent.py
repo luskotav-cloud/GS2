@@ -6,6 +6,8 @@ quanto pelo servidor Flask (server.py). Lê todas as configurações do .env.
 """
 
 import os
+import re
+import time
 
 from dotenv import load_dotenv
 from agno.agent import Agent
@@ -93,3 +95,73 @@ def build_agent(session_id: str = "default", user_id: str | None = None) -> Agen
         instructions=INSTRUCTIONS,
     )
     return agent
+
+
+# ---------------------------------------------------------------------------
+# Retry automático em erros transitórios do provider (429 por minuto / 503)
+# ---------------------------------------------------------------------------
+MAX_RETRIES = int(os.getenv("AGENT_MAX_RETRIES", "2"))
+
+
+def _is_retryable(msg: str) -> bool:
+    """Decide se vale a pena re-tentar com base na mensagem de erro.
+
+    Re-tenta em 503 (sobrecarga) e 429 por minuto (rate-limit transitório).
+    NÃO re-tenta em 429 de cota DIÁRIA — esperar não resolve.
+    """
+    if not msg:
+        return False
+    m = msg.lower()
+    # Cota diária esgotada: re-tentar é inútil.
+    if "perday" in m.replace("_", "") or "per day" in m:
+        return False
+    return any(
+        k in m
+        for k in ("503", "unavailable", "high demand", "overloaded",
+                  "perminute", "rate limit")
+    ) or ("429" in m and "perday" not in m.replace("_", ""))
+
+
+def _retry_delay(msg: str, fallback: float) -> float:
+    """Extrai o tempo de espera sugerido pelo provider (retryDelay), com teto."""
+    for pat in (r"retry in ([0-9.]+)s", r"retrydelay['\"]?:\s*['\"]?([0-9.]+)"):
+        match = re.search(pat, msg, re.IGNORECASE)
+        if match:
+            try:
+                return min(float(match.group(1)) + 1.0, 65.0)
+            except ValueError:
+                pass
+    return fallback
+
+
+def run_with_retry(agent: Agent, message: str, max_retries: int = MAX_RETRIES, **kwargs):
+    """Executa agent.run com retry automático em erros transitórios.
+
+    O Agno/Gemini ora levanta exceção, ora devolve o erro dentro de
+    result.content; tratamos os dois casos. Em cota diária (429/PerDay) não
+    re-tenta, pois esperar não adianta.
+
+    Args:
+        agent: Instância do Agent.
+        message: Pergunta/comando do usuário.
+        max_retries: Nº máximo de novas tentativas.
+
+    Returns:
+        O RunOutput do Agno (mesmo objeto de agent.run).
+    """
+    attempt = 0
+    while True:
+        try:
+            result = agent.run(message, **kwargs)
+            content = getattr(result, "content", "") or ""
+            if attempt < max_retries and _is_retryable(content):
+                time.sleep(_retry_delay(content, 5.0 * (attempt + 1)))
+                attempt += 1
+                continue
+            return result
+        except Exception as e:
+            if attempt < max_retries and _is_retryable(str(e)):
+                time.sleep(_retry_delay(str(e), 5.0 * (attempt + 1)))
+                attempt += 1
+                continue
+            raise
