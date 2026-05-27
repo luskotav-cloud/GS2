@@ -101,6 +101,7 @@ Acesse **http://127.0.0.1:5000**. Interface em **Vue 3** com:
 - formulário de chat para envio de mensagens;
 - exibição das respostas do agente (com markdown);
 - painel lateral com as tools disponíveis;
+- **botão de anexo (📎)** para enviar um arquivo e rodar a análise forense de esteganografia;
 - botão de nova sessão.
 
 ---
