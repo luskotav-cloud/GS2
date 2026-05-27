@@ -4,3 +4,5 @@ __pycache__/
 .env
 *.db
 uploads/
+# Projeto de terceiros usado apenas como referência/inspiração (não faz parte da entrega)
+EagleOsint/

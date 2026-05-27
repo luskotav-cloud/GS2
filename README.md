@@ -8,12 +8,12 @@ O agente recebe comandos em linguagem natural, decide qual ferramenta usar, exec
 
 ---
 
-## 🧰 Tools implementadas (10)
+## 🧰 Tools implementadas (14)
 
 | Tool | O que faz |
 |------|-----------|
 | `search_subdomains_crt` | Enumera subdomínios **passivamente** via Certificate Transparency (API pública do **crt.sh**), com retry e match exato de sufixo. |
-| `verify_username_presence` | Verifica em quais plataformas (GitHub, GitLab, Reddit, Hacker News) um **username** existe, por **conteúdo/JSON** das APIs (sem falsos 200 de login walls). |
+| `verify_username_presence` | Verifica em quais plataformas (GitHub, GitLab, Reddit, Hacker News, Keybase) um **username** existe, por **conteúdo/JSON** das APIs (sem falsos 200 de login walls). |
 | `get_whois_info` | Consulta dados de registro **WHOIS** (criação, expiração, registrar, org, país, emails, name servers) via `python-whois`. |
 | `check_wayback_machine` | Verifica snapshots arquivados de um site no **Internet Archive (Wayback Machine)**. |
 | `analyze_file_steganography` | Mini-**Binwalk** em Python puro: detecta **dados anexados após o EOF** (IEND/FFD9) e varre **Magic Bytes confiáveis** de containers embutidos (ZIP, RAR, 7z, PDF, GZIP, ELF, PNG). |
@@ -22,8 +22,14 @@ O agente recebe comandos em linguagem natural, decide qual ferramenta usar, exec
 | `fuzz_web_paths` *(fuzzing)* | **Content discovery** estilo gobuster/ffuf: faz fuzzing paralelo de paths sensíveis (admin, `.git/config`, `.env`, backups, api…), com detecção de soft-404 e rate-limit. |
 | `fuzz_subdomains_dns` *(fuzzing)* | Brute-force **ativo** de subdomínios via DNS (wordlist embutida), complementando o crt.sh passivo. Reporta os que resolvem e seus IPs. |
 | `query_dns_records` *(extra)* | Consulta registros DNS **A, AAAA, MX, NS, TXT, CNAME, SOA** via `dnspython` (reconhecimento de infraestrutura). |
+| `ip_geolocation` *(extra)* | Geolocaliza um IP/domínio via **ipinfo.io**: cidade, país, organização/ASN, coordenadas e fuso. |
+| `github_user_info` *(extra)* | Coleta o perfil público do **GitHub** (nome, bio, empresa, local, repos, seguidores, data de criação) via API oficial. |
+| `expand_short_url` *(extra)* | Expande URLs encurtadas (bit.ly, t.co…) revelando a **cadeia de redirects** e o destino final — útil contra phishing. |
+| `reverse_ip_lookup` *(extra)* | **Reverse IP lookup** (HackerTarget): lista outros domínios hospedados no mesmo IP (infra compartilhada). |
 
 > As tools executam ações reais — nenhuma resposta é simulada ou fixa.
+> Algumas se inspiram em toolkits OSINT de referência (ex.: EagleOsint), mas
+> foram reescritas com APIs confiáveis e tratamento de erros próprio.
 
 ---
 
@@ -34,7 +40,7 @@ GS2/
 ├── main.py            # CLI interativa (estilo chat)
 ├── server.py          # Servidor Flask (API + interface web)
 ├── agent.py           # Fábrica do agente Agno (modelo, tools, persistência)
-├── tools.py           # As 10 tools de OSINT/forense
+├── tools.py           # As 14 tools de OSINT/forense
 ├── templates/
 │   └── index.html     # Front-end em Vue 3 (via CDN)
 ├── requirements.txt
@@ -92,6 +98,10 @@ Exemplos de comandos:
 - `faça fuzzing de diretorios em exemplo.com`
 - `brute force de subdominios de tesla.com`
 - `mostre os registros DNS (MX, NS, TXT) de github.com`
+- `onde fica o IP 8.8.8.8?`
+- `me mostre o perfil github do torvalds`
+- `pra onde aponta esse link bit.ly/xxxx?`
+- `quais dominios estao no mesmo IP de github.com?`
 
 Comandos especiais: `/new` (nova sessão), `/help` (lista tools), `/sair`.
 

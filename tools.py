@@ -188,6 +188,19 @@ def verify_username_presence(username: str) -> str:
     except (requests.RequestException, ValueError):
         check("HackerNews", None, "")
 
+    # Keybase — API oficial: 'them' vem null se o usuário não existe.
+    try:
+        r = sess.get(f"https://keybase.io/_/api/1.0/user/lookup.json?usernames={username}",
+                     timeout=TIMEOUT)
+        if r.status_code == 200:
+            them = r.json().get("them")
+            found = bool(them) and any(u for u in them)
+            check("Keybase", found, f"https://keybase.io/{username}")
+        else:
+            check("Keybase", None, "")
+    except (requests.RequestException, ValueError):
+        check("Keybase", None, "")
+
     return f"Verificação do username '{username}':\n" + "\n".join(results)
 
 
@@ -725,6 +738,199 @@ def query_dns_records(domain: str) -> str:
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------------------
+# Tool 11 — Geolocalização de IP (ipinfo.io)
+# ---------------------------------------------------------------------------
+def ip_geolocation(target: str) -> str:
+    """Geolocaliza um IP (ou domínio) usando a API pública do ipinfo.io.
+
+    Retorna cidade, região, país, organização/ASN, coordenadas e fuso horário.
+    Se receber um domínio, resolve para IP antes de consultar.
+
+    Args:
+        target: IP (ex: "8.8.8.8") ou domínio (ex: "github.com").
+
+    Returns:
+        Texto com os dados de geolocalização e rede do IP.
+    """
+    target = target.strip()
+    if not target:
+        return "[GeoIP] Informe um IP ou domínio."
+
+    # Se não parece IP, resolve o domínio.
+    ip = target
+    if not all(p.isdigit() for p in target.split(".") if p) or target.count(".") != 3:
+        clean = _clean_domain(target)
+        try:
+            ip = socket.gethostbyname(clean)
+        except socket.gaierror as e:
+            return f"[GeoIP] Não foi possível resolver '{clean}': {e}"
+
+    try:
+        data = _session().get(f"https://ipinfo.io/{ip}/json", timeout=TIMEOUT).json()
+    except requests.RequestException as e:
+        return f"[GeoIP] Erro de rede: {e}"
+    except (json.JSONDecodeError, ValueError):
+        return "[GeoIP] Resposta inválida do ipinfo.io."
+
+    if data.get("error") or "ip" not in data:
+        return f"[GeoIP] Sem dados para '{ip}' ({data.get('error', {}).get('title', 'desconhecido')})."
+
+    return (
+        f"[GeoIP] Geolocalização de {data.get('ip', ip)}"
+        + (f" ({target})" if target != ip else "")
+        + ":\n"
+        f"  Hostname  : {data.get('hostname', 'N/A')}\n"
+        f"  Cidade    : {data.get('city', 'N/A')}\n"
+        f"  Região    : {data.get('region', 'N/A')}\n"
+        f"  País      : {data.get('country', 'N/A')}\n"
+        f"  Org/ASN   : {data.get('org', 'N/A')}\n"
+        f"  Coords    : {data.get('loc', 'N/A')}\n"
+        f"  Fuso      : {data.get('timezone', 'N/A')}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 12 — Perfil público do GitHub
+# ---------------------------------------------------------------------------
+def github_user_info(username: str) -> str:
+    """Coleta o perfil público de um usuário do GitHub via API oficial.
+
+    Vai além do verify_username_presence: retorna nome, bio, empresa,
+    localização, site, nº de repositórios públicos, seguidores, seguindo e
+    data de criação da conta.
+
+    Args:
+        username: Usuário do GitHub, ex: "torvalds".
+
+    Returns:
+        Texto com os dados públicos do perfil do GitHub.
+    """
+    username = username.strip().lstrip("@")
+    if not username:
+        return "[GitHub] Informe um usuário."
+
+    try:
+        r = _session().get(f"https://api.github.com/users/{username}", timeout=TIMEOUT)
+    except requests.RequestException as e:
+        return f"[GitHub] Erro de rede: {e}"
+
+    if r.status_code == 404:
+        return f"[GitHub] Usuário '{username}' não existe."
+    if r.status_code != 200:
+        return f"[GitHub] Falha na consulta (status {r.status_code})."
+
+    try:
+        d = r.json()
+    except (json.JSONDecodeError, ValueError):
+        return "[GitHub] Resposta inválida da API."
+
+    created = (d.get("created_at") or "")[:10]
+    return (
+        f"[GitHub] Perfil de @{d.get('login', username)}:\n"
+        f"  Nome      : {d.get('name') or 'N/A'}\n"
+        f"  Bio       : {d.get('bio') or 'N/A'}\n"
+        f"  Empresa   : {d.get('company') or 'N/A'}\n"
+        f"  Local     : {d.get('location') or 'N/A'}\n"
+        f"  Site/Blog : {d.get('blog') or 'N/A'}\n"
+        f"  Repos     : {d.get('public_repos', 0)}  |  Gists: {d.get('public_gists', 0)}\n"
+        f"  Seguidores: {d.get('followers', 0)}  |  Seguindo: {d.get('following', 0)}\n"
+        f"  Criado em : {created or 'N/A'}\n"
+        f"  URL       : {d.get('html_url', '')}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 13 — Expandir URL encurtada (revelar destino real)
+# ---------------------------------------------------------------------------
+def expand_short_url(url: str) -> str:
+    """Expande uma URL encurtada (bit.ly, t.co, tinyurl, etc.) revelando o
+    destino real e toda a cadeia de redirecionamentos.
+
+    Útil em OSINT/phishing para ver para onde um link suspeito aponta sem
+    abri-lo no navegador.
+
+    Args:
+        url: URL encurtada/suspeita, ex: "https://bit.ly/xxxx".
+
+    Returns:
+        Texto com a cadeia de redirects e a URL final de destino.
+    """
+    url = url.strip()
+    if not url:
+        return "[Unshorten] Informe uma URL."
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    try:
+        resp = _session(retries=1).get(url, timeout=TIMEOUT, allow_redirects=True)
+    except requests.RequestException as e:
+        return f"[Unshorten] Erro de rede: {e}"
+
+    chain = list(resp.history) + [resp]
+    if len(chain) == 1:
+        return (
+            f"[Unshorten] '{url}' não redireciona — já é o destino final.\n"
+            f"  Status final: {resp.status_code}"
+        )
+
+    lines = []
+    for i, h in enumerate(chain):
+        arrow = "  ->" if i else "    "
+        lines.append(f"{arrow} [{h.status_code}] {h.url}")
+    return (
+        f"[Unshorten] Cadeia de redirecionamento de '{url}':\n"
+        + "\n".join(lines)
+        + f"\n  DESTINO FINAL: {resp.url}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 14 — Reverse IP lookup (domínios no mesmo IP) via HackerTarget
+# ---------------------------------------------------------------------------
+def reverse_ip_lookup(target: str) -> str:
+    """Faz reverse IP lookup: descobre outros domínios hospedados no mesmo IP.
+
+    Usa a API pública do HackerTarget. Aceita IP ou domínio (resolve antes).
+    Útil para mapear infraestrutura compartilhada / virtual hosts.
+
+    Args:
+        target: IP (ex: "104.18.0.0") ou domínio (ex: "github.com").
+
+    Returns:
+        Texto com a lista de domínios que compartilham o mesmo IP.
+    """
+    target = target.strip()
+    if not target:
+        return "[RevIP] Informe um IP ou domínio."
+
+    query = target
+    if not (target.count(".") == 3 and all(p.isdigit() for p in target.split(".") if p)):
+        query = _clean_domain(target)
+
+    try:
+        resp = _session().get("https://api.hackertarget.com/reverseiplookup/",
+                              params={"q": query}, timeout=TIMEOUT)
+        text = resp.text.strip()
+    except requests.RequestException as e:
+        return f"[RevIP] Erro de rede: {e}"
+
+    low = text.lower()
+    if "api count exceeded" in low:
+        return "[RevIP] Limite diário gratuito da API HackerTarget atingido. Tente mais tarde."
+    if not text or "error" in low or "no records" in low:
+        return f"[RevIP] Nenhum domínio encontrado para '{query}'."
+
+    domains = [d.strip() for d in text.splitlines() if d.strip()]
+    shown = domains[:50]
+    listing = "\n".join(f"  - {d}" for d in shown)
+    extra = f"\n  ... (+{len(domains) - 50} outros)" if len(domains) > 50 else ""
+    return (
+        f"[RevIP] {len(domains)} domínio(s) no mesmo IP de '{query}':\n"
+        + listing + extra
+    )
+
+
 # Lista exportada para o agente registrar todas as tools de uma vez.
 ALL_TOOLS = [
     search_subdomains_crt,
@@ -737,4 +943,8 @@ ALL_TOOLS = [
     fuzz_web_paths,
     fuzz_subdomains_dns,
     query_dns_records,
+    ip_geolocation,
+    github_user_info,
+    expand_short_url,
+    reverse_ip_lookup,
 ]
