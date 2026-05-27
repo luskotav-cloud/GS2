@@ -8,17 +8,20 @@ O agente recebe comandos em linguagem natural, decide qual ferramenta usar, exec
 
 ---
 
-## 🧰 Tools implementadas (7)
+## 🧰 Tools implementadas (10)
 
 | Tool | O que faz |
 |------|-----------|
-| `search_subdomains_crt` | Enumera subdomínios via Certificate Transparency (API pública do **crt.sh**). |
-| `verify_username_presence` | Verifica em quais plataformas (GitHub, Reddit, TryHackMe, Instagram) um **username** existe, analisando status code HTTP. |
-| `get_whois_info` | Consulta dados de registro **WHOIS** (Creation Date, Registrar, Emails) via `python-whois`. |
+| `search_subdomains_crt` | Enumera subdomínios **passivamente** via Certificate Transparency (API pública do **crt.sh**), com retry e match exato de sufixo. |
+| `verify_username_presence` | Verifica em quais plataformas (GitHub, GitLab, Reddit, Hacker News) um **username** existe, por **conteúdo/JSON** das APIs (sem falsos 200 de login walls). |
+| `get_whois_info` | Consulta dados de registro **WHOIS** (criação, expiração, registrar, org, país, emails, name servers) via `python-whois`. |
 | `check_wayback_machine` | Verifica snapshots arquivados de um site no **Internet Archive (Wayback Machine)**. |
-| `analyze_file_steganography` | Mini-**Binwalk** em Python puro: varre um arquivo binário em busca de **Magic Bytes** de arquivos embutidos (ZIP, RAR, PDF, MZ/ELF, etc.). |
-| `analyze_http_security_headers` *(extra)* | Analisa cabeçalhos de segurança HTTP (HSTS, CSP, X-Frame-Options…) e aponta os ausentes. |
-| `resolve_dns` *(extra)* | Resolve um domínio para seus IPs (registros A) e hostname canônico. |
+| `analyze_file_steganography` | Mini-**Binwalk** em Python puro: detecta **dados anexados após o EOF** (IEND/FFD9) e varre **Magic Bytes confiáveis** de containers embutidos (ZIP, RAR, 7z, PDF, GZIP, ELF, PNG). |
+| `analyze_http_security_headers` *(extra)* | Analisa cabeçalhos de segurança HTTP (HSTS, CSP, X-Frame-Options…), aponta os ausentes e dá uma nota (A–D). |
+| `resolve_dns` *(extra)* | Resolve um domínio para IPs **IPv4 (A) e IPv6 (AAAA)** e faz **DNS reverso (PTR)**. |
+| `fuzz_web_paths` *(fuzzing)* | **Content discovery** estilo gobuster/ffuf: faz fuzzing paralelo de paths sensíveis (admin, `.git/config`, `.env`, backups, api…), com detecção de soft-404 e rate-limit. |
+| `fuzz_subdomains_dns` *(fuzzing)* | Brute-force **ativo** de subdomínios via DNS (wordlist embutida), complementando o crt.sh passivo. Reporta os que resolvem e seus IPs. |
+| `query_dns_records` *(extra)* | Consulta registros DNS **A, AAAA, MX, NS, TXT, CNAME, SOA** via `dnspython` (reconhecimento de infraestrutura). |
 
 > As tools executam ações reais — nenhuma resposta é simulada ou fixa.
 
@@ -31,7 +34,7 @@ GS2/
 ├── main.py            # CLI interativa (estilo chat)
 ├── server.py          # Servidor Flask (API + interface web)
 ├── agent.py           # Fábrica do agente Agno (modelo, tools, persistência)
-├── tools.py           # As 7 tools de OSINT/forense
+├── tools.py           # As 10 tools de OSINT/forense
 ├── templates/
 │   └── index.html     # Front-end em Vue 3 (via CDN)
 ├── requirements.txt

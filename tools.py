@@ -10,6 +10,7 @@ Tema do agente: Reconhecimento e Forense Digital (OSINT Security Agent).
 
 import json
 import socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import requests
@@ -516,6 +517,214 @@ def resolve_dns(domain: str) -> str:
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------------------
+# Tool 8 — Fuzzing de diretórios/arquivos web (content discovery)
+# ---------------------------------------------------------------------------
+# Wordlist embutida de caminhos sensíveis comuns (estilo gobuster/ffuf).
+# Embutida no código para funcionar em qualquer ambiente (Docker incluso).
+WEB_FUZZ_WORDLIST = [
+    "admin", "administrator", "login", "wp-admin", "wp-login.php", "dashboard",
+    "robots.txt", "sitemap.xml", ".git/config", ".git/HEAD", ".env", ".htaccess",
+    "backup", "backup.zip", "backup.sql", "db.sql", "dump.sql", "config.php",
+    "config", "configuration", "phpinfo.php", "info.php", "test", "test.php",
+    "api", "api/v1", "api/v2", "swagger", "swagger-ui", "graphql", "actuator",
+    "actuator/health", "server-status", "status", "metrics", "debug",
+    "uploads", "upload", "files", "tmp", "temp", "old", "dev", "staging",
+    "console", "shell", "cmd", "phpmyadmin", "adminer.php", "license.txt",
+    "readme.txt", "README.md", "CHANGELOG.md", ".well-known/security.txt",
+]
+
+
+def fuzz_web_paths(url: str) -> str:
+    """Faz fuzzing de diretórios/arquivos web (content discovery) num site.
+
+    Funciona como um mini gobuster/ffuf: para cada caminho de uma wordlist
+    embutida de paths sensíveis comuns (admin, .git/config, .env, backups,
+    api, phpmyadmin, etc.), faz uma requisição HTTP real e reporta os que
+    NÃO retornam 404 — possíveis arquivos/diretórios expostos. As requisições
+    rodam em paralelo (threads) para ser rápido. Detecta também "soft 404"
+    (site que devolve 200 para qualquer caminho) para evitar falsos positivos.
+
+    Uso ético: rode apenas em alvos próprios ou com autorização explícita.
+
+    Args:
+        url: Site alvo, ex: "exemplo.com" ou "https://exemplo.com".
+
+    Returns:
+        Texto com os caminhos descobertos (status code e tamanho da resposta).
+    """
+    url = url.strip()
+    if not url:
+        return "[Fuzz] Informe uma URL."
+    if not url.startswith("http"):
+        url = "https://" + url
+    base = url.rstrip("/")
+
+    sess = _session(retries=1)
+
+    # Detecção de soft-404: pede um caminho aleatório improvável.
+    soft404 = False
+    try:
+        probe = sess.get(f"{base}/zzq_nao_existe_404_{int(datetime.now().timestamp())}",
+                         timeout=TIMEOUT, allow_redirects=False)
+        if probe.status_code == 200:
+            soft404 = True
+    except requests.RequestException as e:
+        return f"[Fuzz] Erro ao acessar {base}: {e}"
+
+    rate_limited = [0]  # nº de respostas 429 (inconclusivas, não são "achados")
+
+    def probe_path(path: str):
+        full = f"{base}/{path}"
+        try:
+            r = sess.get(full, timeout=TIMEOUT, allow_redirects=False)
+        except requests.RequestException:
+            return None
+        # 429 = rate-limit do servidor: inconclusivo, não conta como descoberta.
+        if r.status_code == 429:
+            rate_limited[0] += 1
+            return None
+        # Ignora 404 (e qualquer 200 se o site for soft-404).
+        if r.status_code == 404:
+            return None
+        if soft404 and r.status_code == 200:
+            return None
+        return (r.status_code, len(r.content), full)
+
+    found = []
+    # Concorrência moderada: rápido sem disparar rate-limit agressivo.
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {pool.submit(probe_path, p): p for p in WEB_FUZZ_WORDLIST}
+        for fut in as_completed(futures):
+            res = fut.result()
+            if res:
+                found.append(res)
+
+    header = f"[Fuzz] Content discovery em {base} ({len(WEB_FUZZ_WORDLIST)} paths testados)"
+    if soft404:
+        header += "\n  AVISO: site responde 200 para paths inexistentes (soft-404); 200 foi ignorado."
+    if rate_limited[0]:
+        header += f"\n  AVISO: {rate_limited[0]} requisição(ões) levaram 429 (rate-limit) e foram ignoradas."
+    if not found:
+        return header + "\n  Nenhum caminho interessante encontrado (todos 404 ou inacessíveis)."
+
+    found.sort(key=lambda x: (x[0], x[2]))
+    lines = "\n".join(
+        f"  [{code}] {full}  ({size} bytes)" for code, size, full in found
+    )
+    return header + f"\n  {len(found)} caminho(s) encontrado(s):\n{lines}"
+
+
+# ---------------------------------------------------------------------------
+# Tool 9 — Fuzzing/brute-force ativo de subdomínios via DNS
+# ---------------------------------------------------------------------------
+# Wordlist embutida de subdomínios comuns.
+SUBDOMAIN_WORDLIST = [
+    "www", "mail", "ftp", "webmail", "smtp", "pop", "imap", "ns1", "ns2",
+    "dns", "vpn", "remote", "api", "dev", "staging", "stage", "test", "qa",
+    "uat", "admin", "portal", "app", "apps", "blog", "shop", "store", "cdn",
+    "static", "assets", "img", "images", "media", "cloud", "git", "gitlab",
+    "jenkins", "ci", "jira", "confluence", "wiki", "docs", "support", "help",
+    "status", "monitor", "grafana", "kibana", "db", "database", "mysql",
+    "postgres", "redis", "internal", "intranet", "secure", "login", "auth",
+    "sso", "m", "mobile", "beta", "demo", "sandbox", "old", "new", "backup",
+]
+
+
+def fuzz_subdomains_dns(domain: str) -> str:
+    """Faz fuzzing/brute-force ATIVO de subdomínios resolvendo nomes via DNS.
+
+    Complementa o crt.sh (que é passivo, via Certificate Transparency): aqui
+    testamos uma wordlist embutida de subdomínios comuns (www, mail, vpn, dev,
+    staging, api, grafana, etc.), tentando resolver cada um via DNS em paralelo.
+    Reporta os subdomínios que resolvem e seus IPs — descobrindo hosts que
+    podem não aparecer em certificados.
+
+    Uso ético: rode apenas em alvos próprios ou com autorização explícita.
+
+    Args:
+        domain: Domínio base, ex: "tesla.com".
+
+    Returns:
+        Texto com os subdomínios que resolveram e seus IPs.
+    """
+    domain = _clean_domain(domain)
+    if not domain or "." not in domain:
+        return f"[SubFuzz] Domínio inválido: '{domain}'."
+
+    def resolve(sub: str):
+        fqdn = f"{sub}.{domain}"
+        try:
+            _, _, ips = socket.gethostbyname_ex(fqdn)
+            return (fqdn, ips)
+        except (socket.gaierror, socket.herror, UnicodeError):
+            return None
+
+    found = []
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        futures = {pool.submit(resolve, s): s for s in SUBDOMAIN_WORDLIST}
+        for fut in as_completed(futures):
+            res = fut.result()
+            if res:
+                found.append(res)
+
+    header = f"[SubFuzz] Brute-force DNS em *.{domain} ({len(SUBDOMAIN_WORDLIST)} nomes testados)"
+    if not found:
+        return header + "\n  Nenhum subdomínio da wordlist resolveu."
+
+    found.sort(key=lambda x: x[0])
+    lines = "\n".join(f"  [+] {fqdn:<30} -> {', '.join(ips)}" for fqdn, ips in found)
+    return header + f"\n  {len(found)} subdomínio(s) ativo(s):\n{lines}"
+
+
+# ---------------------------------------------------------------------------
+# Tool 10 — Consulta completa de registros DNS (dnspython)
+# ---------------------------------------------------------------------------
+def query_dns_records(domain: str) -> str:
+    """Consulta vários tipos de registro DNS de um domínio (A, AAAA, MX, NS,
+    TXT, CNAME, SOA) usando a biblioteca dnspython.
+
+    Vai além do resolve_dns (que só faz A/AAAA/PTR): traz servidores de e-mail
+    (MX), name servers (NS), registros TXT (SPF/DKIM/verificações) e SOA — úteis
+    em reconhecimento de infraestrutura.
+
+    Args:
+        domain: Domínio a consultar, ex: "github.com".
+
+    Returns:
+        Texto com os registros DNS encontrados, agrupados por tipo.
+    """
+    import dns.resolver  # dnspython
+
+    domain = _clean_domain(domain)
+    if not domain or "." not in domain:
+        return f"[DNS-Rec] Domínio inválido: '{domain}'."
+
+    resolver = dns.resolver.Resolver()
+    resolver.timeout = 5
+    resolver.lifetime = 8
+
+    out = [f"[DNS-Rec] Registros DNS de '{domain}':"]
+    any_found = False
+    for rtype in ("A", "AAAA", "MX", "NS", "TXT", "CNAME", "SOA"):
+        try:
+            answers = resolver.resolve(domain, rtype)
+            values = [r.to_text() for r in answers]
+            any_found = True
+            out.append(f"  {rtype}:")
+            out += [f"    - {v}" for v in values]
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            continue
+        except (dns.resolver.NoNameservers, dns.exception.Timeout) as e:
+            out.append(f"  {rtype}: (erro: {e})")
+        except Exception:
+            continue
+
+    if not any_found:
+        return f"[DNS-Rec] Nenhum registro DNS encontrado para '{domain}'."
+    return "\n".join(out)
+
+
 # Lista exportada para o agente registrar todas as tools de uma vez.
 ALL_TOOLS = [
     search_subdomains_crt,
@@ -525,4 +734,7 @@ ALL_TOOLS = [
     analyze_file_steganography,
     analyze_http_security_headers,
     resolve_dns,
+    fuzz_web_paths,
+    fuzz_subdomains_dns,
+    query_dns_records,
 ]

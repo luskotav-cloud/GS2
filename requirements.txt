@@ -4,6 +4,7 @@ openai
 google-genai
 sqlalchemy
 python-whois
+dnspython
 requests
 flask
 flask-cors
