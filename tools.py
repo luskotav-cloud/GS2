@@ -9,6 +9,7 @@ Tema do agente: Reconhecimento e Forense Digital (OSINT Security Agent).
 """
 
 import json
+import os
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -531,40 +532,76 @@ def resolve_dns(domain: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool 8 — Fuzzing de diretórios/arquivos web (content discovery)
+# Tool 8 — Fuzzing de diretórios/arquivos web (content discovery, estilo ffuf)
 # ---------------------------------------------------------------------------
-# Wordlist embutida de caminhos sensíveis comuns (estilo gobuster/ffuf).
-# Embutida no código para funcionar em qualquer ambiente (Docker incluso).
-WEB_FUZZ_WORDLIST = [
+WORDLIST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wordlists")
+COMMON_WORDLIST = os.path.join(WORDLIST_DIR, "common.txt")
+# Wordlist real do SecLists (a mesma usada com ffuf/gobuster). É baixada sob
+# demanda e cacheada em wordlists/common.txt na primeira execução.
+SECLISTS_COMMON_URL = (
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/"
+    "Discovery/Web-Content/common.txt"
+)
+
+# Fallback mínimo, usado só se a wordlist do SecLists não puder ser baixada.
+WEB_FUZZ_FALLBACK = [
     "admin", "administrator", "login", "wp-admin", "wp-login.php", "dashboard",
     "robots.txt", "sitemap.xml", ".git/config", ".git/HEAD", ".env", ".htaccess",
-    "backup", "backup.zip", "backup.sql", "db.sql", "dump.sql", "config.php",
-    "config", "configuration", "phpinfo.php", "info.php", "test", "test.php",
-    "api", "api/v1", "api/v2", "swagger", "swagger-ui", "graphql", "actuator",
-    "actuator/health", "server-status", "status", "metrics", "debug",
-    "uploads", "upload", "files", "tmp", "temp", "old", "dev", "staging",
-    "console", "shell", "cmd", "phpmyadmin", "adminer.php", "license.txt",
-    "readme.txt", "README.md", "CHANGELOG.md", ".well-known/security.txt",
+    "backup", "backup.zip", "backup.sql", "config.php", "config", "phpinfo.php",
+    "api", "api/v1", "swagger", "graphql", "actuator", "server-status", "status",
+    "metrics", "uploads", "files", "tmp", "old", "dev", "staging", "phpmyadmin",
+    ".well-known/security.txt", "readme.txt", "CHANGELOG.md", "test", "debug",
 ]
 
 
-def fuzz_web_paths(url: str) -> str:
-    """Faz fuzzing de diretórios/arquivos web (content discovery) num site.
+def _load_web_wordlist():
+    """Carrega a wordlist do disco; se faltar, baixa do SecLists e cacheia.
 
-    Funciona como um mini gobuster/ffuf: para cada caminho de uma wordlist
-    embutida de paths sensíveis comuns (admin, .git/config, .env, backups,
-    api, phpmyadmin, etc.), faz uma requisição HTTP real e reporta os que
-    NÃO retornam 404 — possíveis arquivos/diretórios expostos. As requisições
-    rodam em paralelo (threads) para ser rápido. Detecta também "soft 404"
-    (site que devolve 200 para qualquer caminho) para evitar falsos positivos.
+    Returns:
+        Tupla (lista_de_paths, origem_legivel).
+    """
+    if os.path.isfile(COMMON_WORDLIST):
+        try:
+            with open(COMMON_WORDLIST, encoding="utf-8", errors="ignore") as f:
+                words = [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")]
+            if words:
+                return words, "SecLists common.txt"
+        except OSError:
+            pass
+    # Não existe localmente: tenta baixar uma vez e cachear.
+    try:
+        os.makedirs(WORDLIST_DIR, exist_ok=True)
+        r = _session().get(SECLISTS_COMMON_URL, timeout=30)
+        if r.status_code == 200 and r.text.strip():
+            with open(COMMON_WORDLIST, "wb") as f:
+                f.write(r.content)
+            words = [ln.strip() for ln in r.text.splitlines()
+                     if ln.strip() and not ln.startswith("#")]
+            if words:
+                return words, "SecLists common.txt (baixada)"
+    except requests.RequestException:
+        pass
+    return WEB_FUZZ_FALLBACK, "wordlist embutida (fallback)"
+
+
+def fuzz_web_paths(url: str, max_paths: int = 0) -> str:
+    """Faz fuzzing de diretórios/arquivos web (content discovery) estilo ffuf.
+
+    Usa a wordlist real common.txt do SecLists (~4700 paths), a mesma que
+    ffuf/gobuster usam (baixada e cacheada em wordlists/ automaticamente).
+    Dispara as requisições em paralelo (40 threads, timeout curto) para ser
+    rápido e reporta, em tabela, todo caminho que NÃO retorna 404 — incluindo
+    200/301/302/401/403 — com status code e tamanho da resposta. Filtra
+    "soft-404" comparando o tamanho com o de um path comprovadamente inexistente.
 
     Uso ético: rode apenas em alvos próprios ou com autorização explícita.
 
     Args:
         url: Site alvo, ex: "exemplo.com" ou "https://exemplo.com".
+        max_paths: Limite de paths a testar (0 = wordlist inteira).
 
     Returns:
-        Texto com os caminhos descobertos (status code e tamanho da resposta).
+        Tabela dos caminhos descobertos (status, tamanho, URL, redirect).
     """
     url = url.strip()
     if not url:
@@ -573,59 +610,75 @@ def fuzz_web_paths(url: str) -> str:
         url = "https://" + url
     base = url.rstrip("/")
 
-    sess = _session(retries=1)
+    words, source = _load_web_wordlist()
+    if max_paths and max_paths > 0:
+        words = words[:max_paths]
+    total = len(words)
 
-    # Detecção de soft-404: pede um caminho aleatório improvável.
+    sess = _session(retries=0)
+    fuzz_timeout = 8
+
+    # Baseline soft-404: status e tamanho de um path improvável.
     soft404 = False
+    base_size = -1
     try:
-        probe = sess.get(f"{base}/zzq_nao_existe_404_{int(datetime.now().timestamp())}",
-                         timeout=TIMEOUT, allow_redirects=False)
+        probe = sess.get(f"{base}/zzq_nao_existe_{int(datetime.now().timestamp())}xyz",
+                         timeout=fuzz_timeout, allow_redirects=False)
         if probe.status_code == 200:
             soft404 = True
+            base_size = len(probe.content)
     except requests.RequestException as e:
         return f"[Fuzz] Erro ao acessar {base}: {e}"
 
-    rate_limited = [0]  # nº de respostas 429 (inconclusivas, não são "achados")
+    # Tolerância de tamanho p/ soft-404 (páginas costumam ecoar o path na resposta).
+    tol = max(80, int(base_size * 0.1)) if base_size > 0 else 80
+    rate_limited = [0]
 
     def probe_path(path: str):
-        full = f"{base}/{path}"
+        full = f"{base}/{path.lstrip('/')}"
         try:
-            r = sess.get(full, timeout=TIMEOUT, allow_redirects=False)
+            r = sess.get(full, timeout=fuzz_timeout, allow_redirects=False)
         except requests.RequestException:
             return None
-        # 429 = rate-limit do servidor: inconclusivo, não conta como descoberta.
-        if r.status_code == 429:
+        code = r.status_code
+        if code == 429:
             rate_limited[0] += 1
             return None
-        # Ignora 404 (e qualquer 200 se o site for soft-404).
-        if r.status_code == 404:
+        if code == 404:
             return None
-        if soft404 and r.status_code == 200:
+        size = len(r.content)
+        if soft404 and code == 200 and abs(size - base_size) <= tol:
             return None
-        return (r.status_code, len(r.content), full)
+        return (code, size, full, r.headers.get("Location", ""))
 
     found = []
-    # Concorrência moderada: rápido sem disparar rate-limit agressivo.
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {pool.submit(probe_path, p): p for p in WEB_FUZZ_WORDLIST}
-        for fut in as_completed(futures):
-            res = fut.result()
+    workers = 60
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for res in pool.map(probe_path, words):
             if res:
                 found.append(res)
 
-    header = f"[Fuzz] Content discovery em {base} ({len(WEB_FUZZ_WORDLIST)} paths testados)"
-    if soft404:
-        header += "\n  AVISO: site responde 200 para paths inexistentes (soft-404); 200 foi ignorado."
-    if rate_limited[0]:
-        header += f"\n  AVISO: {rate_limited[0]} requisição(ões) levaram 429 (rate-limit) e foram ignoradas."
-    if not found:
-        return header + "\n  Nenhum caminho interessante encontrado (todos 404 ou inacessíveis)."
-
-    found.sort(key=lambda x: (x[0], x[2]))
-    lines = "\n".join(
-        f"  [{code}] {full}  ({size} bytes)" for code, size, full in found
+    header = (
+        f"[Fuzz] Content discovery (estilo ffuf) em {base}\n"
+        f"  Wordlist: {source} — {total} paths, {workers} threads."
     )
-    return header + f"\n  {len(found)} caminho(s) encontrado(s):\n{lines}"
+    if soft404:
+        header += "\n  AVISO: site é soft-404 (200 para paths inexistentes); 200 de tamanho similar filtrado."
+    if rate_limited[0]:
+        header += f"\n  AVISO: {rate_limited[0]} resposta(s) 429 (rate-limit) ignoradas."
+    if not found:
+        return header + "\n  Nenhum caminho encontrado (todos 404/filtrados)."
+
+    # Ordena por status, depois maior resposta primeiro.
+    found.sort(key=lambda x: (x[0], -x[1]))
+    cap = 100
+    lines = []
+    for code, size, full, loc in found[:cap]:
+        extra = f"  -> {loc}" if loc else ""
+        lines.append(f"  [{code}]  {size:>8} B  {full}{extra}")
+    body = "\n".join(lines)
+    more = f"\n  ... (+{len(found) - cap} outros)" if len(found) > cap else ""
+    return header + f"\n  {len(found)} caminho(s) encontrado(s):\n{body}{more}"
 
 
 # ---------------------------------------------------------------------------

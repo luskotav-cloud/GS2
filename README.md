@@ -19,7 +19,7 @@ O agente recebe comandos em linguagem natural, decide qual ferramenta usar, exec
 | `analyze_file_steganography` | Mini-**Binwalk** em Python puro: detecta **dados anexados após o EOF** (IEND/FFD9) e varre **Magic Bytes confiáveis** de containers embutidos (ZIP, RAR, 7z, PDF, GZIP, ELF, PNG). |
 | `analyze_http_security_headers` *(extra)* | Analisa cabeçalhos de segurança HTTP (HSTS, CSP, X-Frame-Options…), aponta os ausentes e dá uma nota (A–D). |
 | `resolve_dns` *(extra)* | Resolve um domínio para IPs **IPv4 (A) e IPv6 (AAAA)** e faz **DNS reverso (PTR)**. |
-| `fuzz_web_paths` *(fuzzing)* | **Content discovery** estilo gobuster/ffuf: faz fuzzing paralelo de paths sensíveis (admin, `.git/config`, `.env`, backups, api…), com detecção de soft-404 e rate-limit. |
+| `fuzz_web_paths` *(fuzzing)* | **Content discovery** estilo **ffuf/gobuster**: usa a wordlist real `common.txt` do **SecLists** (~4700 paths, baixada e cacheada automaticamente), 60 threads, e lista em tabela todo caminho ≠ 404 (status + tamanho), filtrando soft-404. |
 | `fuzz_subdomains_dns` *(fuzzing)* | Brute-force **ativo** de subdomínios via DNS (wordlist embutida), complementando o crt.sh passivo. Reporta os que resolvem e seus IPs. |
 | `query_dns_records` *(extra)* | Consulta registros DNS **A, AAAA, MX, NS, TXT, CNAME, SOA** via `dnspython` (reconhecimento de infraestrutura). |
 | `ip_geolocation` *(extra)* | Geolocaliza um IP/domínio via **ipinfo.io**: cidade, país, organização/ASN, coordenadas e fuso. |

@@ -6,3 +6,5 @@ __pycache__/
 uploads/
 # Projeto de terceiros usado apenas como referência/inspiração (não faz parte da entrega)
 EagleOsint/
+# Wordlists do SecLists (terceiros) — baixadas automaticamente na 1ª execução
+wordlists/
